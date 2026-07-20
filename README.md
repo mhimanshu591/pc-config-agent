@@ -70,7 +70,7 @@ An agentic AI system built with **LangGraph** that assists users in configuring 
 ### Prerequisites
 
 - Python 3.8 or higher
-- Ollama installed and running
+- Groq API key (free)
 
 ### Installation
 
@@ -90,19 +90,20 @@ pip install -r requirements.txt
 cp .env.example .env
 ```
 
-Edit `.env` and configure Ollama:
+Edit `.env` and configure Groq:
 ```
-LLM_PROVIDER=ollama
-MODEL_NAME=qwen2.5:7b
+LLM_PROVIDER=groq
+GROQ_API_KEY=your_groq_api_key_here
+MODEL_NAME=llama-3.3-70b-versatile
 TEMPERATURE=0.7
 MAX_RETRIES=3
 ```
 
-**To set up Ollama:**
-- Download and install Ollama from https://ollama.com
-- Start the Ollama application
-- Pull the required model: `ollama pull qwen2.5:7b`
-- The agent will connect to Ollama automatically on http://127.0.0.1:11434
+**To get a Groq API key:**
+- Go to https://console.groq.com/keys
+- Sign up for a free account (no credit card required)
+- Copy your API key and add it to the `.env` file
+- Groq provides 14,400 requests/day for free with ultra-fast inference
 
 4. Ensure the dataset is available:
 The agent expects the dataset at `../Computer_Components_Dataset/data/csv` relative to the project root. Update the `DATASET_PATH` in `.env` if your dataset is located elsewhere.

@@ -7,7 +7,7 @@ from dataclasses import dataclass
 from datetime import datetime
 
 from langgraph.graph import StateGraph, END
-from langchain_ollama import ChatOllama
+from langchain_groq import ChatGroq
 from langchain_core.messages import HumanMessage, AIMessage, ToolMessage
 from langchain_core.tools import tool
 from tenacity import retry, stop_after_attempt, wait_exponential
@@ -54,10 +54,11 @@ class PCConfigAgentLangGraph:
     def __init__(self):
         Config.validate()
         
-        # Initialize LLM using Ollama with timeout and streaming
-        self.llm = ChatOllama(
+        # Initialize LLM using Groq with timeout
+        self.llm = ChatGroq(
             model=Config.MODEL_NAME,
             temperature=Config.TEMPERATURE,
+            api_key=Config.GROQ_API_KEY,
             timeout=60  # 60 second timeout for faster failure
         )
         
@@ -81,25 +82,20 @@ class PCConfigAgentLangGraph:
         """Create LangChain tools from tool registry."""
         
         @tool
-        def search_components(component_type: str, filters: str = "{}", max_price: str = "None", limit: str = "5") -> str:
+        def search_components(component_type: str, max_price: float = None, limit: int = 5) -> str:
             """Search for components by type with optional filters.
             
             Args:
                 component_type: Type of component (cpu, motherboard, memory, etc.)
-                filters: JSON string of key-value pairs to filter results
-                max_price: Maximum price filter (as string)
+                max_price: Maximum price filter
                 limit: Max results (default 5)
             """
             try:
-                filter_dict = json.loads(filters) if filters != "{}" else None
-                max_price_val = float(max_price) if max_price != "None" else None
-                limit_val = int(limit)
-                
                 results = self.data_loader.search_components(
                     component_type=component_type,
-                    filters=filter_dict,
-                    max_price=max_price_val,
-                    limit=limit_val
+                    filters=None,
+                    max_price=max_price,
+                    limit=limit
                 )
                 return json.dumps(results, indent=2, default=str)
             except Exception as e:
