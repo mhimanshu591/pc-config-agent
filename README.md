@@ -70,7 +70,7 @@ An agentic AI system built with **LangGraph** that assists users in configuring 
 ### Prerequisites
 
 - Python 3.8 or higher
-- Groq API key (free, ultra-fast inference)
+- Groq API key (free, ultra-fast inference) OR Gemini API key
 
 ### Installation
 
@@ -90,11 +90,22 @@ pip install -r requirements.txt
 cp .env.example .env
 ```
 
-Edit `.env` and configure Groq:
+Edit `.env` and configure your LLM provider:
+
+**For Groq (recommended - ultra-fast):**
 ```
 LLM_PROVIDER=groq
 GROQ_API_KEY=your_groq_api_key_here
 MODEL_NAME=llama-3.3-70b-versatile
+TEMPERATURE=0.7
+MAX_RETRIES=3
+```
+
+**For Gemini:**
+```
+LLM_PROVIDER=gemini
+GEMINI_API_KEY=your_gemini_api_key_here
+MODEL_NAME=gemini-1.5-pro
 TEMPERATURE=0.7
 MAX_RETRIES=3
 ```
@@ -104,6 +115,11 @@ MAX_RETRIES=3
 - Sign up for a free account (no credit card required)
 - Copy your API key and add it to the `.env` file
 - Groq provides 14,400 requests/day for free with ultra-fast inference
+
+**To get a Gemini API key:**
+- Go to https://makersuite.google.com/app/apikey
+- Sign up for a Google account
+- Create an API key and add it to the `.env` file
 
 4. Ensure the dataset is available:
 The agent expects the dataset at `../Computer_Components_Dataset/data/csv` relative to the project root. Update the `DATASET_PATH` in `.env` if your dataset is located elsewhere.
@@ -186,13 +202,13 @@ pc_config_agent/
 
 ## Design Decisions
 
-### Agent Architecture
-- **LangGraph Framework**: Uses LangGraph for state-based agent orchestration with simplified workflow
-- **Node-Based Workflow**: 3 nodes (agent → tools → final_response) for efficient single-pass execution
+### Agent Architecture (Current)
+- **LangGraph Framework**: Uses LangGraph for state-based agent orchestration
+- **Node-Based Workflow**: 3 nodes (agent → tools → final_response) for single-pass execution
 - **State Management**: TypedDict-based state for tracking messages, requirements, and components
-- **LangChain Integration**: Uses LangChain tools with Pydantic schemas for component search and filtering
+- **LangChain Integration**: Uses LangChain tools with Pydantic schemas for component search
 - **Conditional Edges**: Dynamic routing based on agent state and tool call results
-- **Groq LLM**: Ultra-fast inference with llama-3.3-70b-versatile model
+- **LLM Support**: Groq (llama-3.3-70b-versatile) or Gemini (gemini-1.5-pro)
 
 ### Prompt Engineering
 - **Chain-of-Thought**: Step-by-step reasoning instructions for systematic component selection
@@ -207,8 +223,9 @@ pc_config_agent/
 ### Trade-offs
 - **Single-Pass Workflow**: Prioritized speed and reliability over multi-step reasoning
 - **Simplified Tools**: Removed schema/type tools to prevent infinite loops
-- **Groq vs Local**: Chose cloud API for speed over local privacy
+- **Cloud vs Local**: Chose cloud API for speed over local privacy
 - **Component Coverage**: Some component types may have empty results in dataset
+- **LLM Flexibility**: Supports both Groq (fast) and Gemini (robust)
 
 ## Advanced Techniques Demonstrated
 
