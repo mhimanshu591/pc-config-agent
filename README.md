@@ -70,7 +70,7 @@ An agentic AI system built with **LangGraph** that assists users in configuring 
 ### Prerequisites
 
 - Python 3.8 or higher
-- Groq API key (free)
+- Groq API key (free, ultra-fast inference)
 
 ### Installation
 
@@ -187,16 +187,17 @@ pc_config_agent/
 ## Design Decisions
 
 ### Agent Architecture
-- **LangGraph Framework**: Uses LangGraph for state-based agent orchestration with multiple nodes
-- **Node-Based Workflow**: Separate nodes for requirement gathering, planning, tool execution, and reflection
+- **LangGraph Framework**: Uses LangGraph for state-based agent orchestration with simplified workflow
+- **Node-Based Workflow**: 3 nodes (agent → tools → final_response) for efficient single-pass execution
 - **State Management**: TypedDict-based state for tracking messages, requirements, and components
-- **LangChain Integration**: Uses LangChain tools for component search and filtering
+- **LangChain Integration**: Uses LangChain tools with Pydantic schemas for component search and filtering
 - **Conditional Edges**: Dynamic routing based on agent state and tool call results
+- **Groq LLM**: Ultra-fast inference with llama-3.3-70b-versatile model
 
 ### Prompt Engineering
-- **Chain-of-Thought**: Structured reasoning template for better compatibility checking
-- **Few-Shot Examples**: Included examples to guide requirement gathering and feedback handling
-- **Self-Reflection**: Explicit reflection step to catch compatibility issues before finalizing
+- **Chain-of-Thought**: Step-by-step reasoning instructions for systematic component selection
+- **Compatibility Rules**: Explicit compatibility constraints in system prompt
+- **Tool Instructions**: Clear guidance on when and how to use search_components tool
 
 ### Error Handling
 - **Tenacity Retry**: Exponential backoff for LLM API failures
@@ -204,18 +205,20 @@ pc_config_agent/
 - **Input Validation**: Configuration validation on startup
 
 ### Trade-offs
-- **Simplicity vs Features**: Prioritized working system over advanced features (streaming, UI, Docker)
-- **Dataset Size**: Full dataset loaded into memory for fast queries; could be optimized for larger datasets
-- **Compatibility Rules**: Basic compatibility checking; could be enhanced with a formal knowledge base
+- **Single-Pass Workflow**: Prioritized speed and reliability over multi-step reasoning
+- **Simplified Tools**: Removed schema/type tools to prevent infinite loops
+- **Groq vs Local**: Chose cloud API for speed over local privacy
+- **Component Coverage**: Some component types may have empty results in dataset
 
 ## Advanced Techniques Demonstrated
 
-1. **LangGraph Orchestration**: State-based agent workflow with multiple nodes and conditional edges
-2. **Chain-of-Thought Prompting**: Structured reasoning template for systematic component selection
-3. **Self-Reflection**: Explicit validation step before final recommendations
+1. **LangGraph Orchestration**: State-based agent workflow with simplified single-pass execution
+2. **Chain-of-Thought Prompting**: Step-by-step reasoning instructions for systematic component selection
+3. **Pydantic Schemas**: Structured tool parameter validation for reliable tool calling
 4. **LangChain Tools**: Reliable tool execution with structured outputs
-5. **Few-Shot Learning**: Examples in prompts to guide agent behavior
-6. **Error Resilience**: Retry logic with exponential backoff
+5. **Groq Integration**: Ultra-fast cloud LLM with excellent tool-calling support
+6. **Error Resilience**: Retry logic with exponential backoff via tenacity
+7. **Colored Debugging**: Real-time visual feedback for agent workflow steps
 
 ## Example Agent Trace
 

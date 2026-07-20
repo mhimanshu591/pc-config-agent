@@ -10,7 +10,7 @@ class Config:
     
     LLM_PROVIDER = os.getenv("LLM_PROVIDER", "groq")
     GROQ_API_KEY = os.getenv("GROQ_API_KEY")
-    MODEL_NAME = os.getenv("MODEL_NAME", "llama-3.3-70b-versatile")  # Groq-supported model
+    MODEL_NAME = os.getenv("MODEL_NAME", "llama-3.3-70b-versatile")  # Better tool calling support
     TEMPERATURE = float(os.getenv("TEMPERATURE", "0.7"))
     MAX_RETRIES = int(os.getenv("MAX_RETRIES", "3"))
     DATASET_PATH = os.getenv("DATASET_PATH", "../Computer_Components_Dataset/data/csv")

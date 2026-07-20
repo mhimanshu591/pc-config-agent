@@ -45,32 +45,41 @@
 
 ## Agent Trace Example
 
-### User Request: "I need a gaming PC for 1080p gaming with a $1000 budget"
+### User Request: "i need to buy a pc under 10k $ budget"
 
 **Step 1: Invocation Start**
-- Timestamp: 2026-07-17T00:24:24.951Z
-- User Input: "I need a gaming PC for 1080p gaming with a $1000 budget"
+- Timestamp: 2026-07-20 17:27:47,455
+- User Input: "i need to buy a pc under 10k $ budget"
 
 **Step 2: Agent Reasoning with Tools**
-- Timestamp: 2026-07-17T00:26:41.831Z
+- Timestamp: 2026-07-20 17:27:47,463
 - Action: Agent analyzes request and determines tool usage needed
 - Tool Calls: 
-  - `search_components(component_type="cpu", max_price="300", limit="3")`
-  - `search_components(component_type="video-card", max_price="400", limit="3")`
+  - `search_components(component_type="cpu", max_price=10000)`
+  - `search_components(component_type="motherboard", max_price=10000)`
+  - `search_components(component_type="memory", max_price=10000)`
+  - `search_components(component_type="video-card", max_price=10000)`
+  - `search_components(component_type="power-supply", max_price=10000)`
+  - `search_components(component_type="case", max_price=10000)`
 
 **Step 3: Tool Execution**
-- Timestamp: 2026-07-17T00:28:17.473Z
+- Timestamp: 2026-07-20 17:27:48,059
 - Tool Results:
-  - CPU search returned 3 compatible CPUs within budget
-  - Video card search returned 3 GPUs within budget
+  - CPU search returned 3 compatible CPUs (AMD Ryzen 7 9800X3D $451.50, etc.)
+  - Motherboard search returned 3 compatible motherboards (Asus PRIME B650-PLUS WIFI $159.99, etc.)
+  - Memory search returned 3 RAM kits (Corsair Vengeance RGB 32 GB $94.99, etc.)
+  - Video-card search returned [] (empty results)
+  - Power-supply search returned [] (empty results)
+  - Case search returned 3 cases (Montech XR $83.59, etc.)
 
 **Step 4: Final Response Generation**
-- Timestamp: 2026-07-17T00:30:07.451Z
-- Response: Agent provides complete PC configuration with compatibility analysis
+- Timestamp: 2026-07-20 17:27:49,168
+- Response: Agent provides PC configuration with available components, notes missing GPU/PSU
+- Total Cost: $444.45 (within $10,000 budget)
 
 **Step 5: Invocation Complete**
-- Timestamp: 2026-07-17T00:31:37.221Z
-- Total Duration: ~7 minutes
+- Timestamp: 2026-07-20 17:27:49,171
+- Total Duration: ~2 seconds (ultra-fast Groq inference)
 - Final Output: Structured PC recommendation with component list and compatibility notes
 
 ## Design Decisions and Trade-offs
@@ -88,55 +97,59 @@
 - Steeper learning curve
 - Overhead for simple use cases
 
-### 2. LLM Provider: Ollama with qwen2.5:7b
-**Decision:** Local LLM via Ollama instead of cloud APIs
+### 2. LLM Provider: Groq with llama-3.3-70b-versatile
+**Decision:** Cloud LLM via Groq instead of local or other cloud APIs
 **Rationale:**
-- No API costs or rate limits
-- Privacy (data stays local)
-- qwen2.5:7b has good tool-calling support (8/10 reliability)
-- 4.4GB size is manageable for local deployment
+- Ultra-fast inference (10-100x faster than alternatives)
+- Free tier with 14,400 requests/day
+- llama-3.3-70b has excellent tool-calling support
+- No local hardware requirements
+- High-quality model (70B parameters)
 
 **Trade-offs:**
-- Slower inference than cloud APIs
-- Requires local hardware resources
-- Model quality lower than GPT-4
-- Initial setup complexity
+- Data sent to cloud (less privacy than local)
+- Rate limits on free tier
+- Requires internet connection
+- API key management
 
 ### 3. Simplified Workflow
-**Decision:** Reduced from 5 nodes to 2 nodes (agent + tools)
+**Decision:** Reduced to 3 nodes (agent → tools → final_response)
 **Rationale:**
-- Original workflow (requirement_gatherer → planner → agent → tools → reflection) was too slow
-- Each node added 30-50 seconds latency
-- Simplified to essential tool-calling loop
+- Original multi-node workflow was causing infinite loops
+- Each additional node added complexity without value
+- Single-pass execution prevents tool-calling loops
+- Groq's speed makes multi-step reasoning unnecessary
 
 **Trade-offs:**
-- Less structured reasoning
+- Less structured multi-step reasoning
 - Removed explicit reflection step
-- Potential for less thorough analysis
+- Agent must provide final response after one tool round
 
 ### 4. Prompt Engineering Approach
-**Decision:** Minimal, concise prompts optimized for smaller model
+**Decision:** Step-by-step reasoning with chain-of-thought instructions
 **Rationale:**
-- qwen2.5:7b (7B parameters) struggles with complex prompts
-- Reduced token processing for faster inference
-- Focus on essential instructions only
+- llama-3.3-70b handles complex prompts well
+- Chain-of-thought improves compatibility checking
+- Clear tool usage instructions prevent infinite loops
+- Compatibility rules explicitly stated
 
 **Trade-offs:**
-- Less sophisticated reasoning
-- Fewer few-shot examples
-- Potentially less robust handling of edge cases
+- More complex prompt engineering
+- Higher token usage per request
+- Requires careful prompt tuning
 
 ### 5. Error Handling Strategy
-**Decision:** Timeout-based error handling with logging
+**Decision:** Tenacity retry with exponential backoff + colored debugging
 **Rationale:**
-- Local LLMs can be slow or hang
-- 60-second timeout prevents indefinite blocking
+- Groq API can have transient failures
+- Automatic retry logic improves reliability
+- Colored debugging provides real-time visibility
 - Comprehensive logging for debugging
 
 **Trade-offs:**
-- May timeout on complex queries
-- No automatic retry logic
-- Manual intervention needed for failures
+- Retry logic adds complexity
+- May retry on genuine failures
+- Debugging output can be verbose
 
 ### 6. Component Compatibility Logic
 **Decision:** LLM-based compatibility checking with tool support
@@ -176,21 +189,21 @@ LangGraph's TypedDict-based state tracks:
 ## Performance Characteristics
 
 ### Latency Breakdown
-- Tool-less response: 30-45 seconds
-- Single tool call: 45-60 seconds
-- Multi-tool workflow: 60-90 seconds
-- Total agent invocation: 2-7 minutes
+- Tool-less response: 0.5-1 second
+- Single tool call: 1-2 seconds
+- Multi-tool workflow: 2-3 seconds
+- Total agent invocation: 2-5 seconds
 
 ### Bottlenecks
-1. **Ollama inference**: Primary bottleneck (local LLM speed)
-2. **Tool execution**: Minimal overhead (CSV queries are fast)
-3. **State management**: Negligible overhead
+1. **Groq API latency**: Minimal (ultra-fast inference)
+2. **Tool execution**: Negligible overhead (CSV queries are fast)
+3. **Network latency**: Minor (HTTP requests to Groq)
 
 ### Optimization Attempts
-1. ✅ Simplified workflow (reduced nodes)
-2. ✅ Timeout configuration (60s limit)
-3. ✅ Minimal prompts (reduced tokens)
-4. ✅ Efficient tool design (targeted queries)
+1. ✅ Simplified workflow (single-pass execution)
+2. ✅ Pydantic schemas (reliable tool calling)
+3. ✅ Chain-of-thought prompting (better reasoning)
+4. ✅ Colored debugging (real-time visibility)
 
 ## Evaluation Results
 

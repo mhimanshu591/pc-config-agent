@@ -5,6 +5,7 @@ from typing import TypedDict, Annotated, List, Dict, Optional
 from operator import add
 from dataclasses import dataclass
 from datetime import datetime
+from colorama import Fore, Style, init
 
 from langgraph.graph import StateGraph, END
 from langchain_groq import ChatGroq
@@ -13,6 +14,9 @@ from langchain_core.tools import tool
 from tenacity import retry, stop_after_attempt, wait_exponential
 
 from config import Config
+
+# Initialize colorama
+init(autoreset=True)
 from data_loader import ComponentDataLoader
 from tools import ToolRegistry
 import prompts
@@ -76,20 +80,22 @@ class PCConfigAgentLangGraph:
         self.graph = self._build_graph()
         
         self.trace: List[AgentStep] = []
+        print(f"{Fore.GREEN}✓ LangGraph agent initialized successfully{Style.RESET_ALL}")
         logger.info("LangGraph agent initialized successfully")
     
     def _create_langchain_tools(self):
-        """Create LangChain tools from tool registry."""
+        """Create LangChain tools from tool registry - simplified to only search_components."""
         
-        @tool
-        def search_components(component_type: str, max_price: float = None, limit: int = 5) -> str:
-            """Search for components by type with optional filters.
-            
-            Args:
-                component_type: Type of component (cpu, motherboard, memory, etc.)
-                max_price: Maximum price filter
-                limit: Max results (default 5)
-            """
+        from pydantic import BaseModel, Field
+        
+        class SearchComponentsInput(BaseModel):
+            component_type: str = Field(description="Type of component (cpu, motherboard, memory, video-card, power-supply, case, internal-hard-drive)")
+            max_price: float = Field(default=None, description="Maximum price in USD")
+            limit: int = Field(default=3, description="Maximum number of results")
+        
+        @tool(args_schema=SearchComponentsInput)
+        def search_components(component_type: str, max_price: float = None, limit: int = 3) -> str:
+            """Search for PC components by type and price range. Use this tool to find components for PC builds."""
             try:
                 results = self.data_loader.search_components(
                     component_type=component_type,
@@ -97,7 +103,9 @@ class PCConfigAgentLangGraph:
                     max_price=max_price,
                     limit=limit
                 )
-                return json.dumps(results, indent=2, default=str)
+                # Return simplified format to reduce tokens
+                simplified = [{"name": r.get("name", "Unknown"), "price": r.get("price", 0)} for r in results]
+                return json.dumps(simplified, indent=2, default=str)
             except Exception as e:
                 return json.dumps({"error": str(e)})
         
@@ -201,12 +209,14 @@ class PCConfigAgentLangGraph:
             return state
         
         tool_calls = last_message.tool_calls
+        print(f"{Fore.YELLOW}🔨 Executing {len(tool_calls)} tool(s){Style.RESET_ALL}")
         self._log_step("tool_calls", f"Executing {len(tool_calls)} tool(s)", [tc for tc in tool_calls])
         
         tool_results = []
         for tool_call in tool_calls:
             tool_name = tool_call["name"]
             tool_args = tool_call["args"]
+            print(f"{Fore.YELLOW}  → {tool_name} with args: {tool_args}{Style.RESET_ALL}")
             
             # Find and execute the tool
             for lc_tool in self.langchain_tools:
@@ -214,10 +224,12 @@ class PCConfigAgentLangGraph:
                     try:
                         result = lc_tool.invoke(tool_args)
                         tool_results.append(result)
+                        print(f"{Fore.GREEN}  ✓ {tool_name} completed{Style.RESET_ALL}")
                         self._log_step("tool_result", f"{tool_name}: {str(result)[:200]}...")
                     except Exception as e:
                         error_msg = json.dumps({"error": str(e)})
                         tool_results.append(error_msg)
+                        print(f"{Fore.RED}  ✗ {tool_name} failed: {str(e)}{Style.RESET_ALL}")
                         self._log_step("tool_error", f"{tool_name}: {str(e)}")
                     break
         
@@ -233,22 +245,23 @@ class PCConfigAgentLangGraph:
     
     def _agent_node(self, state: AgentState) -> AgentState:
         """Main agent node that uses the LLM with tools."""
+        print(f"{Fore.BLUE}🤖 Agent reasoning with tools{Style.RESET_ALL}")
         self._log_step("agent_reasoning", "Agent reasoning with tools")
         
         # Get last message
         last_message = state["messages"][-1]
         
-        # If last message was a tool result, we need to continue
-        if isinstance(last_message, ToolMessage):
-            # Invoke LLM with tool results
-            response = self.llm_with_tools.invoke(state["messages"])
-        else:
-            # Initial invocation
-            system_prompt = f"{prompts.SYSTEM_PROMPT}\n\n{prompts.TOOL_USE_PROMPT}\n\n{prompts.CHAIN_OF_THOUGHT_TEMPLATE}\n\n{prompts.REFLECTION_PROMPT}"
-            
-            # Build messages with system prompt
-            messages = [("system", system_prompt)] + state["messages"]
-            response = self.llm_with_tools.invoke(messages)
+        # Limit context to last 6 messages to reduce token usage
+        recent_messages = state["messages"][-6:]
+        print(f"{Fore.MAGENTA}📝 Context: {len(recent_messages)} messages{Style.RESET_ALL}")
+        
+        # Initial invocation with simplified prompt
+        print(f"{Fore.CYAN}🚀 Initial invocation{Style.RESET_ALL}")
+        system_prompt = prompts.SYSTEM_PROMPT
+        
+        # Build messages with system prompt
+        messages = [("system", system_prompt)] + recent_messages
+        response = self.llm_with_tools.invoke(messages)
         
         self._log_step("agent_response", response.content)
         
@@ -256,9 +269,42 @@ class PCConfigAgentLangGraph:
         
         # Check if there are tool calls
         if hasattr(response, 'tool_calls') and response.tool_calls:
+            print(f"{Fore.YELLOW}📞 Agent wants to call {len(response.tool_calls)} tool(s){Style.RESET_ALL}")
             state["current_step"] = "needs_tools"
         else:
+            print(f"{Fore.GREEN}✓ Agent provided final response{Style.RESET_ALL}")
             state["current_step"] = "complete"
+        
+        return state
+    
+    def _final_response_node(self, state: AgentState) -> AgentState:
+        """Generate final PC configuration from tool results."""
+        print(f"{Fore.GREEN}🎯 Generating final PC configuration{Style.RESET_ALL}")
+        self._log_step("final_response", "Generating final response")
+        
+        # Get all messages
+        messages = state["messages"]
+        
+        # Build final response prompt
+        system_prompt = prompts.SYSTEM_PROMPT + "\n\nIMPORTANT: Based on the tool results above, provide a final PC configuration recommendation. Include specific component names and prices from the search results. Do not call any more tools."
+        
+        # Convert messages to format for LLM
+        formatted_messages = [("system", system_prompt)]
+        for msg in messages:
+            if isinstance(msg, HumanMessage):
+                formatted_messages.append(("user", msg.content))
+            elif isinstance(msg, AIMessage):
+                formatted_messages.append(("assistant", msg.content))
+            elif isinstance(msg, ToolMessage):
+                formatted_messages.append(("user", f"Tool result: {msg.content}"))
+        
+        # Generate final response without tools
+        response = self.llm.invoke(formatted_messages)
+        
+        self._log_step("final_response_result", response.content)
+        
+        state["messages"].append(AIMessage(content=response.content))
+        state["current_step"] = "complete"
         
         return state
     
@@ -286,11 +332,13 @@ class PCConfigAgentLangGraph:
     
     def _should_continue_tools(self, state: AgentState) -> str:
         """Decide whether to continue using tools or finish."""
+        print(f"{Fore.YELLOW}🔄 Checking if should continue tools...{Style.RESET_ALL}")
+        
         if state["current_step"] == "needs_tools":
+            print(f"{Fore.CYAN}→ Continuing to tools execution{Style.RESET_ALL}")
             return "tools"
-        elif state["current_step"] == "tools_executed":
-            return "agent"
         else:
+            print(f"{Fore.GREEN}✓ Workflow complete{Style.RESET_ALL}")
             return "end"
     
     def _should_reflect(self, state: AgentState) -> str:
@@ -301,47 +349,39 @@ class PCConfigAgentLangGraph:
             return "end"
     
     def _build_graph(self) -> StateGraph:
-        """Build the LangGraph workflow."""
+        """Build the simplified LangGraph workflow - single pass with final response."""
         workflow = StateGraph(AgentState)
         
         # Add nodes
-        workflow.add_node("requirement_gatherer", self._requirement_gatherer_node)
-        workflow.add_node("planner", self._planner_node)
         workflow.add_node("agent", self._agent_node)
         workflow.add_node("tools", self._tool_executor_node)
-        workflow.add_node("reflection", self._reflection_node)
+        workflow.add_node("final_response", self._final_response_node)
         
         # Set entry point
-        workflow.set_entry_point("requirement_gatherer")
+        workflow.set_entry_point("agent")
         
-        # Add edges
-        workflow.add_edge("requirement_gatherer", "planner")
-        workflow.add_edge("planner", "agent")
-        
-        # Conditional edges for tool execution loop
+        # Conditional edges for tool execution
         workflow.add_conditional_edges(
             "agent",
             self._should_continue_tools,
             {
                 "tools": "tools",
-                "end": "reflection"
-            }
-        )
-        
-        workflow.add_conditional_edges(
-            "reflection",
-            self._should_reflect,
-            {
-                "reflect": END,
                 "end": END
             }
         )
+        
+        # After tools, go to final response, then end
+        workflow.add_edge("tools", "final_response")
+        workflow.add_edge("final_response", END)
         
         return workflow.compile()
     
     def invoke(self, user_input: str) -> Dict:
         """Invoke the agent with user input."""
         self.trace = []
+        print(f"{Fore.CYAN}{'='*50}{Style.RESET_ALL}")
+        print(f"{Fore.CYAN}🎯 User Input: {user_input}{Style.RESET_ALL}")
+        print(f"{Fore.CYAN}{'='*50}{Style.RESET_ALL}")
         self._log_step("invocation_start", f"User input: {user_input}")
         
         initial_state = {
